@@ -154,7 +154,7 @@ class DriverSocket(socket.socket):
 
         blen = dest.itemsize * dest.size
         if blen > len(self._buf):
-            self._buf.resize(blen)
+            self._buf.resize(blen, refcheck=False) # Changed the refchek for False in order to work with yappi
         bpos = 0
         ntimeout = 0
 
