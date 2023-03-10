@@ -34,34 +34,46 @@ from ipi.engine.simulation import Simulation
 def main(fn_input, options):
     """Loads and runs the simulation stored in `fn_input`."""
 
-    # optionally profile this run - set up
-    # ~ if do_yappi:
-    # ~ try:
-    # ~ import yappi
-    #~ yappi.start(builtins=True, profile_threads=True)
-    # ~ except ImportError:
-    # ~ print 'Profiling with yappi was enabled but could not be imported.'
-    # ~ print "Profiling with yappi was enabled but could not be imported."
-    #~ sys.exit(1)
+    # CHANGED: Implemented profiling with Yappi
+    # TODO: Profiling threads are not available yet, getting error in something related to numpy?
 
-    # construct simulation based on input file
-    simulation = Simulation.load_from_xml(fn_input, request_banner=True, custom_verbosity=options.verbosity)
+    if options.do_yappi:
+        try:
+            import yappi
+            yappi.set_clock_type('wall')
+            yappi.start(
+                builtins=True,
+                profile_threads=False,
+                profile_greenlets=False
+            )
 
-    # run the simulation
+        except ImportError:
+            print('Profiling with yappi was enabled but could not be imported')
+            sys.exit(1)
+
+
+    # construct simulation based on input file and run
+    simulation = Simulation.load_from_xml(
+        fn_input,
+        request_banner=True,
+        custom_verbosity=options.verbosity
+    )
+
     simulation.run()
 
-    # optionally profile this run - wrap up
-    # TODO
-    # We do not get to this if the run is ctrl interrupted and exits cleanly.
-    # Maybe the profiler should be global and cleaned up on exit?
     if options.do_yappi:
         yappi.stop()
-        yappi.get_thread_stats().print_all()
-        yfs = yappi.get_func_stats()
-        yfs.save("profile.kgrind", type="callgrind")
-        ypo = open("profile.yappi", "w")
-        yfs.print_all(out=ypo)
-        ypo.close()
+
+        memory_usage = yappi.get_mem_usage()
+        print(f"Total memory usage: {memory_usage}")
+
+        threads_profile = yappi.get_thread_stats()
+        threads_profile.save('threads.profile', type='pstat')
+        print(threads_profile)
+
+        func_profile = yappi.get_func_stats()
+        print(func_profile)
+        #func_profile.save('func.profile')
 
     # It seems that checkpoints are written by the following.
     # TODO: Have them written when simulation.run() finishes instead.
@@ -72,34 +84,44 @@ def main(fn_input, options):
 
 if __name__ == '__main__':
 
-    # TODO: Use argparse once we move to Python 2.7.
+    # CHANGED: switched from optparse (python 2.x) to argparse (python 3.x)
 
-    from optparse import OptionParser
+    from argparse import ArgumentParser
 
-    parser = OptionParser(usage='%prog [options] <input file>',
-                          description='The main i-PI executable used to run '
-                                      'a simulation, given an XML input file.'
-                          )
+    parser = ArgumentParser(
+        prog='%prog [options] <input file>',
+        description='The main i-PI executable used to run a simulation, given an XML input file.'
+    )
 
-    parser.add_option('-p', '--profile',
-                      action='store_true', dest='do_yappi', default=False,
-                      help='Profile this run using Yappi.')
+    parser.add_argument(
+        '--filename',
+        dest='fn_in',
+        default=False,
+        help='Input filename'
+    )
 
-    parser.add_option('-V', '--verbosity', dest='verbosity', default=None,
-                      choices=['quiet', 'low', 'medium', 'high', 'debug'],
-                      help='Define the verbosity level.')
+    parser.add_argument(
+        '--verbosity',
+        dest='verbosity',
+        default=None,
+        choices=['quiet', 'low', 'medium', 'high', 'debug'],
+        help='Define the verbosity level'
+    )
 
-    options, args = parser.parse_args()
+    parser.add_argument(
+        '--profile',
+        action='store_true',
+        dest='do_yappi',
+        default=False,
+        help='Profile this run using Yappi'
+    )
 
-    # make sure that we have exactly one input file and it exists
-    if len(args) == 0:
-        parser.error('No input file name provided.')
-    elif len(args) > 1:
-        parser.error('Provide only one input file name.')
+    args = parser.parse_args()
+
+    if args.fn_in:
+        if not os.path.exists(args.fn_in):
+            parser.error(f'Input file not found: {args.fn_in}')
     else:
-        fn_in = args[0]
-        if not os.path.exists(fn_in):
-            parser.error('Input file not found: {:s}'.format(fn_in))
+        parser.error('No input file name provided.')
 
-    # Everything is ready. Go!
-    main(args[0], options)
+    main(args.fn_in, args)
